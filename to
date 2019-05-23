@@ -1,0 +1,81 @@
+#!/bin/zsh
+set -euo pipefail
+
+while getopts 'e:hp' OPT; do
+  case $OPT in
+    e)
+      user_encoding="$OPTARG"
+      ;;
+    p)
+      show_password=true
+      ;;
+    h)
+      echo "Usage: `basename $0` [-e utf8|gbk] regex"
+      exit 0
+      ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+myinfo=$(cat $(dirname $0)/.to.servers)
+regex="${1:-}"
+filtered=$(echo "$myinfo" | sort -k 5 | uniq)
+
+while true; do
+  while [ -z "${regex:-}" ]; do
+    read "regex?Enter Regex: "
+    # read -p "Enter Regex: " regex
+  done
+
+  filtered=$(echo "$filtered" | grep $regex) # || echo -e "\033[31mno match\033[0m"
+  regex=''
+
+  echo -ne "\033[32m"
+  echo "$filtered" | awk '{printf("===> %7s@%-15s <===\t%s\t%s\n", $2, $1, $4, $5)}'
+  echo -ne "\033[0m"
+
+  linum=$(echo "$filtered" | wc -l)
+  if [[ "$linum" -eq 1 ]]; then
+    break
+  fi
+done
+
+host=$(echo "$filtered" | awk '{print $1}')
+user=$(echo "$filtered" | awk '{print $2}')
+password=$(echo "$filtered" | awk '{print $3}')
+encoding=$(echo "$filtered" | awk '{print $4}')
+info=$(echo "$filtered" | awk '{print $5}')
+
+if [[ "${show_password:-}" == "true" ]]; then
+  echo "-----------------------------------"
+  echo "$password"
+  echo "-----------------------------------"
+  exit 0
+fi
+
+read "login?login to $user@$host? [Y/n]: "
+# read -p "login to $user@$host? [Y/n]: " login
+if [ "${login:-y}" != "y" -a "${login:-y}" != "Y" ]; then
+  exit 0
+fi
+
+if [ -n "${user_encoding:-}" ]; then
+  encoding=${user_encoding}
+fi
+
+echo "encoding: ${encoding}"
+echo -e "\033]50;SetProfile=${encoding}\a"
+
+# 使用GBK Profile
+if [[ "${encoding}" == "gbk" ]]; then
+  LANG=zh_CN.GBK
+  LC_ALL=zh_CN.GBK
+elif [[ "$encoding" == "utf8" ]]; then
+  LANG=zh_CN.UTF-8
+  LC_ALL=zh_CN.UTF-8
+fi
+
+echo -ne "\033]0;$user@$host\007"
+
+sshpass -p "$password" ssh -o StrictHostKeyChecking=no "$user@$host" || true
+echo -e "\033]50;SetProfile=Default\a"
